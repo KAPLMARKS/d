@@ -1,0 +1,54 @@
+name: d
+description: "A new Flutter project."
+publish_to: 'none'
+version: 0.1.0+1
+
+environment:
+  sdk: ^3.11.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  intl: any
+  flutter_svg: ^2.0.17
+  google_generative_ai: ^0.4.7
+  apphud: ^3.0.1
+  appsflyer_sdk: ^6.14.3
+  app_tracking_transparency: ^2.0.6
+  shared_preferences: ^2.3.4
+  just_audio: ^0.9.42
+  share_plus: ^12.0.1
+  path_provider: ^2.1.5
+  flutter_tts: ^4.2.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/images/
+    - assets/music/
+  fonts:
+    - family: Amstelvar
+      fonts:
+        - asset: assets/fonts/amstelvar/Amstelvar-Italic[wdth,wght,opsz].ttf
+          style: italic
+    - family: FunnelDisplay
+      fonts:
+        - asset: assets/fonts/funnel_display/FunnelDisplay-Light.ttf
+          weight: 300
+        - asset: assets/fonts/funnel_display/FunnelDisplay-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/funnel_display/FunnelDisplay-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/funnel_display/FunnelDisplay-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/funnel_display/FunnelDisplay-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/funnel_display/FunnelDisplay-ExtraBold.ttf
+          weight: 800
