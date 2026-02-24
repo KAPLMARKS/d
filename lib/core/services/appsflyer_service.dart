@@ -99,7 +99,7 @@ class AppsFlyerService {
   Future<void> _forwardAttributionToApphud(Map<String, dynamic> data) async {
     try {
       final identifier = await _sdk?.getAppsFlyerUID();
-      await ApphudService.instance.setAttribution(
+      await ApphudService.instance.setAppsFlyerAttribution(
         data: data,
         identifier: identifier,
       );

@@ -167,8 +167,9 @@ class _RoutineDetailSheetState extends State<RoutineDetailSheet> {
                             _completedIndices.add(i);
                           }
                         });
+                        final navigator = Navigator.of(context);
                         Future.delayed(const Duration(milliseconds: 400), () {
-                          if (mounted) Navigator.of(context).pop();
+                          if (mounted) navigator.pop();
                         });
                       },
                       child: Text(

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:apphud/models/apphud_models/apphud_product.dart';
 import '../core/localization/app_localizations.dart';
+import '../core/services/apphud_service.dart';
 import '../core/widgets/gradient_background.dart';
 import '../core/widgets/main_shell.dart';
 
@@ -11,27 +13,111 @@ class PaywallScreen extends StatefulWidget {
 }
 
 class _PaywallScreenState extends State<PaywallScreen> {
-  int _selectedPlan = 1;
-
-  void _onNext() {
-    Navigator.of(context).pushAndRemoveUntil(
-      PageRouteBuilder(
-        pageBuilder: (_, _, _) => const MainShell(),
-        transitionsBuilder: (_, animation, _, child) {
-          return FadeTransition(opacity: animation, child: child);
-        },
-        transitionDuration: const Duration(milliseconds: 400),
-      ),
-      (_) => false,
-    );
-  }
+  int _selectedPlan = 0;
+  List<_PlanData> _plans = [];
+  bool _loading = true;
+  bool _purchasing = false;
+  String? _error;
+  bool _hasLoadedProducts = false;
 
   @override
-  Widget build(BuildContext context) {
-    final bottomPadding = MediaQuery.of(context).padding.bottom;
-    final topPadding = MediaQuery.of(context).padding.top;
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_hasLoadedProducts) {
+      _hasLoadedProducts = true;
+      _loadProducts();
+    }
+  }
+
+  Future<void> _loadProducts() async {
     final l10n = AppLocalizations.of(context);
-    final plans = [
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final paywall = await ApphudService.instance.getMainPaywall();
+      final products = await ApphudService.instance.getProducts();
+      if (paywall != null) {
+        ApphudService.instance.paywallShown(paywall);
+      }
+      final plans = _buildPlansFromProducts(products, l10n);
+      if (mounted) {
+        setState(() {
+          _plans = plans;
+          _selectedPlan = plans.length > 1 ? 1 : 0;
+          _loading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _plans = _buildFallbackPlans(l10n);
+          _loading = false;
+          _error = e.toString();
+        });
+      }
+    }
+  }
+
+  List<_PlanData> _buildPlansFromProducts(
+    List<ApphudProduct> products,
+    AppLocalizations l10n,
+  ) {
+    if (products.isEmpty) return _buildFallbackPlans(l10n);
+    final order = ['weekly', 'monthly', 'yearly'];
+    final sorted = List<ApphudProduct>.from(products)
+      ..sort((a, b) {
+        final ai = order.indexWhere((s) => a.productId.toLowerCase().contains(s));
+        final bi = order.indexWhere((s) => b.productId.toLowerCase().contains(s));
+        return (ai < 0 ? 99 : ai).compareTo(bi < 0 ? 99 : bi);
+      });
+    const accents = [
+      Color(0xFFCBA7FF),
+      Color(0xFF7ACBFF),
+      Color(0xFF77C97E),
+    ];
+    return sorted.asMap().entries.map((e) {
+      final i = e.key;
+      final p = e.value;
+      final id = p.productId.toLowerCase();
+      String label, period;
+      String? badge;
+      Color? badgeBgColor, badgeTextColor;
+      if (id.contains('weekly')) {
+        label = l10n.t('weekly');
+        period = l10n.t('week');
+        badge = l10n.t('trial_3_days');
+        badgeBgColor = const Color(0x1ACBA7FF);
+        badgeTextColor = const Color(0xFFCBA7FF);
+      } else if (id.contains('monthly')) {
+        label = l10n.t('monthly');
+        period = l10n.t('month');
+      } else if (id.contains('yearly') || id.contains('annual')) {
+        label = l10n.t('yearly');
+        period = l10n.t('year');
+        badge = l10n.t('save_75');
+        badgeBgColor = const Color(0xFF77C97E);
+        badgeTextColor = const Color(0xFFFFFFFF);
+      } else {
+        label = p.name ?? p.productId;
+        period = l10n.t('month');
+      }
+      return _PlanData(
+        label: label,
+        price: formatApphudProductPrice(p),
+        period: period,
+        accentColor: accents[i % accents.length],
+        badge: badge,
+        badgeBgColor: badgeBgColor,
+        badgeTextColor: badgeTextColor,
+        product: p,
+      );
+    }).toList();
+  }
+
+  List<_PlanData> _buildFallbackPlans(AppLocalizations l10n) {
+    return [
       _PlanData(
         label: l10n.t('weekly'),
         price: '\$3.99',
@@ -57,6 +143,84 @@ class _PaywallScreenState extends State<PaywallScreen> {
         badgeTextColor: const Color(0xFFFFFFFF),
       ),
     ];
+  }
+
+  void _navigateToMain() {
+    Navigator.of(context).pushAndRemoveUntil(
+      PageRouteBuilder(
+        pageBuilder: (_, _, _) => const MainShell(),
+        transitionsBuilder: (_, animation, _, child) {
+          return FadeTransition(opacity: animation, child: child);
+        },
+        transitionDuration: const Duration(milliseconds: 400),
+      ),
+      (_) => false,
+    );
+  }
+
+  Future<void> _onSubscribe() async {
+    if (_purchasing || _plans.isEmpty) return;
+    final product = _plans[_selectedPlan].product;
+    if (product == null) {
+      _navigateToMain();
+      return;
+    }
+    setState(() {
+      _purchasing = true;
+      _error = null;
+    });
+    try {
+      final success = await ApphudService.instance.purchase(product);
+      if (mounted) {
+        setState(() => _purchasing = false);
+        if (success) {
+          _navigateToMain();
+        } else {
+          setState(() => _error = 'Purchase failed');
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _purchasing = false;
+          _error = e.toString();
+        });
+      }
+    }
+  }
+
+  Future<void> _onRestore() async {
+    if (_purchasing) return;
+    setState(() {
+      _purchasing = true;
+      _error = null;
+    });
+    try {
+      final hasAccess = await ApphudService.instance.restorePurchases();
+      if (mounted) {
+        setState(() => _purchasing = false);
+        if (hasAccess) {
+          _navigateToMain();
+        } else {
+          setState(() => _error = 'No purchases to restore');
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _purchasing = false;
+          _error = e.toString();
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomPadding = MediaQuery.of(context).padding.bottom;
+    final topPadding = MediaQuery.of(context).padding.top;
+    final l10n = AppLocalizations.of(context);
+    final plans = _loading ? _buildFallbackPlans(l10n) : _plans;
     final features = [
       l10n.t('feature_personalized_sessions'),
       l10n.t('feature_sleep_relaxation'),
@@ -131,6 +295,17 @@ class _PaywallScreenState extends State<PaywallScreen> {
                         ),
                       );
                     }),
+                    if (_error != null) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        _error!,
+                        style: const TextStyle(
+                          color: Color(0xFFE53935),
+                          fontSize: 13,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
                     const SizedBox(height: 16),
                   ],
                 ),
@@ -138,7 +313,29 @@ class _PaywallScreenState extends State<PaywallScreen> {
             ),
             Padding(
               padding: EdgeInsets.fromLTRB(24, 0, 24, bottomPadding + 16),
-              child: _NextButton(onPressed: _onNext),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _SubscribeButton(
+                    onPressed: _onSubscribe,
+                    loading: _purchasing,
+                  ),
+                  const SizedBox(height: 12),
+                  TextButton(
+                    onPressed: _purchasing ? null : _onRestore,
+                    child: Text(
+                      l10n.t('restore'),
+                      style: const TextStyle(
+                        fontFamily: 'FunnelDisplay',
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                        color: Color(0xFF7B7E89),
+                        decoration: TextDecoration.underline,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ],
         ),
@@ -210,6 +407,7 @@ class _PlanData {
     this.badge,
     this.badgeBgColor,
     this.badgeTextColor,
+    this.product,
   });
 
   final String label;
@@ -219,6 +417,7 @@ class _PlanData {
   final String? badge;
   final Color? badgeBgColor;
   final Color? badgeTextColor;
+  final ApphudProduct? product;
 }
 
 class _PlanTile extends StatelessWidget {
@@ -349,10 +548,14 @@ class _PlanTile extends StatelessWidget {
   }
 }
 
-class _NextButton extends StatelessWidget {
-  const _NextButton({required this.onPressed});
+class _SubscribeButton extends StatelessWidget {
+  const _SubscribeButton({
+    required this.onPressed,
+    this.loading = false,
+  });
 
   final VoidCallback onPressed;
+  final bool loading;
 
   @override
   Widget build(BuildContext context) {
@@ -360,7 +563,7 @@ class _NextButton extends StatelessWidget {
       width: double.infinity,
       height: 64,
       child: ElevatedButton(
-        onPressed: onPressed,
+        onPressed: loading ? null : onPressed,
         style: ElevatedButton.styleFrom(
           backgroundColor: const Color(0xFF111111),
           foregroundColor: Colors.white,
@@ -370,37 +573,46 @@ class _NextButton extends StatelessWidget {
           elevation: 0,
           padding: const EdgeInsets.symmetric(horizontal: 4),
         ),
-        child: Row(
-          children: [
-            const SizedBox(width: 56),
-            Expanded(
-              child: Text(
-                AppLocalizations.of(context).t('next'),
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontFamily: 'FunnelDisplay',
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                  height: 24 / 16,
-                  letterSpacing: -1,
+        child: loading
+            ? const SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.white,
                 ),
+              )
+            : Row(
+                children: [
+                  const SizedBox(width: 56),
+                  Expanded(
+                    child: Text(
+                      AppLocalizations.of(context).t('next'),
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontFamily: 'FunnelDisplay',
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        height: 24 / 16,
+                        letterSpacing: -1,
+                      ),
+                    ),
+                  ),
+                  Container(
+                    width: 56,
+                    height: 56,
+                    decoration: const BoxDecoration(
+                      color: Color(0x14F6F7FA),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.arrow_forward,
+                      color: Colors.white,
+                      size: 20,
+                    ),
+                  ),
+                ],
               ),
-            ),
-            Container(
-              width: 56,
-              height: 56,
-              decoration: const BoxDecoration(
-                color: Color(0x14F6F7FA),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.arrow_forward,
-                color: Colors.white,
-                size: 20,
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }

@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:intl/date_symbol_data_local.dart';
@@ -37,6 +38,11 @@ Future<void> _initializeServices() async {
   final trackingStatus = await TrackingService.instance.requestPermission();
   await AppsFlyerService.instance.initialize();
   await AppsFlyerService.instance.setAttStatus(trackingStatus);
+
+  // Apple Search Ads attribution (iOS only)
+  if (Platform.isIOS) {
+    ApphudService.instance.collectAndForwardAppleSearchAdsAttribution();
+  }
 }
 
 class MainApp extends StatelessWidget {
